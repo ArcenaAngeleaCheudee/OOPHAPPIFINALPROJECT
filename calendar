@@ -1,0 +1,226 @@
+import tkinter as tk
+from tkinter import simpledialog
+import calendar
+
+DEFAULT_YEAR = 2025
+DEFAULT_MONTH = 12
+
+def round_rect(canvas, x1, y1, x2, y2, radius=25, **kwargs):
+    points = [
+        x1+radius, y1, x2-radius, y1,
+        x2, y1, x2, y1+radius,
+        x2, y2-radius, x2, y2,
+        x2-radius, y2, x1+radius, y2,
+        x1, y2, x1, y2-radius,
+        x1, y1+radius, x1, y1
+    ]
+    return canvas.create_polygon(points, smooth=True, **kwargs)
+
+# Main Window
+root = tk.Tk()
+root.title("HAPPI")
+root.geometry("900x500")
+root.configure(bg="black")
+
+# Global State
+current_year = DEFAULT_YEAR
+current_month = DEFAULT_MONTH
+
+events = {}
+selected_date = None
+date_labels = []
+event_lines = []
+
+# Canvas 
+canvas = tk.Canvas(root, bg="black", highlightthickness=0)
+canvas.pack(fill="both", expand=True)
+
+# Layout
+def get_layout():
+    w = canvas.winfo_width()
+    h = canvas.winfo_height()
+
+    header_y = h * 0.07
+    cal_x1 = w * 0.05
+    cal_y1 = h * 0.15
+    cal_x2 = w * 0.55
+    cal_y2 = h * 0.85
+
+    evt_x1 = w * 0.6
+    evt_y1 = h * 0.15
+    evt_x2 = w * 0.95
+    evt_y2 = h * 0.66
+
+    return (header_y, (cal_x1, cal_y1, cal_x2, cal_y2), (evt_x1, evt_y1, evt_x2, evt_y2))
+
+# Background 
+def draw_background():
+    canvas.delete("bg_shapes")
+    header_y, cal_area, evt_area = get_layout()
+
+    round_rect(canvas, *cal_area, radius=30, fill="#D9D9D9", outline="", tags="bg_shapes")
+    round_rect(canvas, cal_area[0]+10, cal_area[1]+10, cal_area[2]-10, cal_area[3]-10, radius=25, fill="black", outline="", tags="bg_shapes")
+    round_rect(canvas, *evt_area, radius=25, fill="black", outline="", tags="bg_shapes")
+
+    canvas.create_text(canvas.winfo_width()/2, header_y, text="Calendar", font=("Arial", 20, "bold"), fill="white", tags="bg_shapes")
+
+# Event Panel & Date Selection
+def refresh_event_list():
+    for box, text in event_lines:
+        canvas.delete(box)
+        canvas.delete(text)
+    event_lines.clear()
+
+    _, _, evt_area = get_layout()
+    y = evt_area[1] + 20
+    key = selected_date
+    list_events = events.get(key, [])[:5]
+
+    for i in range(5):
+        box = round_rect(canvas, evt_area[0]+10, y, evt_area[2]-10, y+35, radius=12, fill="white", outline="")
+        label_text = list_events[i] if i < len(list_events) else ""
+        label = canvas.create_text((evt_area[0]+evt_area[2])/2, y+17, text=label_text, font=("Arial", 10), fill="black")
+
+        def on_enter(event, b=box): canvas.itemconfig(b, fill="#E6E6E6")
+        def on_leave(event, b=box): canvas.itemconfig(b, fill="white")
+
+        canvas.tag_bind(box, "<Enter>", on_enter)
+        canvas.tag_bind(box, "<Leave>", on_leave)
+        canvas.tag_bind(label, "<Enter>", on_enter)
+        canvas.tag_bind(label, "<Leave>", on_leave)
+
+        event_lines.append((box, label))
+        y += 40
+
+def select_date(day):
+    global selected_date
+    for lbl in date_labels:
+        canvas.itemconfig(lbl["id"], fill=lbl["original_color"], font=("Arial", 10))
+
+    for lbl in date_labels:
+        if lbl["day"] == day:
+            canvas.itemconfig(lbl["id"], fill="#EBFF57", font=("Arial", 10, "bold"))
+            canvas.itemconfig(lbl["circle_id"], fill="#555555") # Optional: change circle color on selection
+
+    selected_date = f"{current_year}-{current_month:02d}-{day:02d}"
+    refresh_event_list()
+
+def add_event():
+    if not selected_date:
+        return
+    text = simpledialog.askstring("New Event", "Enter event:")
+    if not text:
+        return
+    if selected_date not in events:
+        events[selected_date] = []
+    events[selected_date].append(text)
+    refresh_event_list()
+
+# Calendar
+def draw_calendar():
+    canvas.delete("dates")
+    canvas.delete("month_text")
+    draw_background()
+    _, cal_area, _ = get_layout()
+
+    # Month/Year Title
+    month_name = calendar.month_name[current_month]
+    canvas.create_text(cal_area[0]+10, cal_area[1]+30, text=f"{month_name} {current_year}", 
+                       font=("Arial", 16, "bold"), fill="white", anchor="w", tags="month_text")
+
+    # Weekdays 
+    weekday_y = cal_area[1] + 80
+    day_spacing = (cal_area[2] - cal_area[0] - 20) / 7
+    weekdays = ["S", "M", "T", "W", "T", "F", "S"]
+    
+    for i, day in enumerate(weekdays):
+        color = "red" if i in (0, 6) else "white"
+        x = cal_area[0] + 30 + i * day_spacing 
+        canvas.create_text(x, weekday_y, text=day, font=("Arial", 10, "bold"), fill=color, tags="dates")
+
+    # Days 
+    cal = calendar.monthcalendar(current_year, current_month)
+    y = weekday_y + 35 
+    date_labels.clear()
+    
+    for week in cal:
+        for i, day in enumerate(week):
+            if day != 0:
+                color = "red" if i in (0, 6) else "white"
+                x = cal_area[0] + 30 + i * day_spacing
+                radius = 12
+                circle_id = canvas.create_oval(x - radius, y - radius, x + radius, y + radius, 
+                                               fill="#333333", outline="", tags=("dates", f"date_circle_{day}"))
+                text_id = canvas.create_text(x, y, text=str(day), font=("Arial", 10), fill=color, tags=("dates", f"date_text_{day}"))
+
+                date_labels.append({
+                    "id": text_id, 
+                    "circle_id": circle_id,
+                    "day": day, 
+                    "original_color": color
+                })
+
+                canvas.tag_bind(text_id, "<Button-1>", lambda e, d=day: select_date(d))
+                canvas.tag_bind(circle_id, "<Button-1>", lambda e, d=day: select_date(d))
+                
+                def hover_enter(event, text_id=text_id, circle_id=circle_id):
+                    canvas.itemconfig(text_id, font=("Arial", 11, "bold"))
+                def hover_leave(event, text_id=text_id, circle_id=circle_id):
+                    canvas.itemconfig(text_id, font=("Arial", 10))
+
+                canvas.tag_bind(text_id, "<Enter>", hover_enter)
+                canvas.tag_bind(text_id, "<Leave>", hover_leave)
+                canvas.tag_bind(circle_id, "<Enter>", hover_enter)
+                canvas.tag_bind(circle_id, "<Leave>", hover_leave)
+                
+        y += 45
+
+    refresh_event_list()
+
+# Place Widgets (Buttons & Dropdowns)
+def place_buttons():
+    _, cal_area, evt_area = get_layout()
+    add_btn.place(x=(evt_area[0]+evt_area[2])/2 - 45, y=evt_area[1]-35, width=90, height=25)
+    dropdown_start_x = cal_area[0] + 250
+    dropdown_y = cal_area[1] + 20
+    
+    month_menu.place(x=dropdown_start_x, y=dropdown_y, width=100, height=35)
+    year_menu.place(x=dropdown_start_x + 110, y=dropdown_y, width=70, height=35)
+
+add_btn = tk.Button(root, text="Add Event", bg="#EBFF57", relief="flat", command=add_event)
+
+# Dropdowns
+month_var = tk.StringVar(value=calendar.month_name[current_month])
+year_var = tk.StringVar(value=str(current_year))
+
+month_options = list(calendar.month_name)[1:]
+month_menu = tk.OptionMenu(root, month_var, *month_options, command=lambda m: change_month_year())
+month_menu.config(bg="#EBFF57", fg="black", relief="flat")
+
+year_options = list(range(2000, 2031))
+year_menu = tk.OptionMenu(root, year_var, *year_options, command=lambda y: change_month_year())
+year_menu.config(bg="#EBFF57", fg="black", relief="flat")
+
+def change_month_year():
+    global current_month, current_year
+    try:
+        current_month = list(calendar.month_name).index(month_var.get())
+        current_year = int(year_var.get())
+    except ValueError:
+        pass 
+    draw_calendar()
+    place_buttons()
+
+    global selected_date
+    selected_date = None
+    refresh_event_list()
+
+def on_resize(event):
+    draw_calendar()
+    place_buttons()
+
+canvas.bind("<Configure>", on_resize)
+
+draw_calendar()
+place_buttons()
+root.mainloop()
